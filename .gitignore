@@ -10,7 +10,6 @@ user.yaml
 !others/**/*.custom.yaml
 
 custom_phrase_double.txt
-custom_phrase_user.txt
 others/script/scel2txt/out/*
 others/script/scel2txt/scel/*
 
