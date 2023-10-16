@@ -843,6 +843,7 @@ Eject	Eject ⏏
 女男女	女男女 嫐
 ----------化学式	----------
 水	水 💦 H₂O
+一氧化二氢	一氧化二氢 H₂O
 乙醇	乙醇 C₂H₆O
 高锰酸钾	高锰酸钾 K₂MnO₄
 石灰石	石灰石 CaCO₃
@@ -1243,6 +1244,12 @@ Pokemon	Pokemon Pokémon
 毫秒	毫秒 ms millisecond
 微秒	微秒 μs microsecond
 纳秒	纳秒 ns nanosecond
+皮秒	皮秒 ps picosecond
+飞秒	飞秒 fs femtosecond
+阿秒	阿秒 as attosecond
+毫米	毫米 mm millimeter
+微米	微米 μm micrometer
+纳米	纳米 nm nanometer
 掀桌子	掀桌子 (╯'-')╯︵┻━┻ (╯°Д°)╯︵┻━┻
 摆桌子	摆桌子 ┬─┬ノ('-'ノ)
 车马炮	车马炮 車马炮
