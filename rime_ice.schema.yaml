@@ -6,43 +6,42 @@
 schema:
   schema_id: rime_ice
   name: 雾凇拼音
-  version: "2023-10-22"
+  version: "2024-02-01"
   author:
     - Dvel
   description: |
     雾凇拼音
     https://github.com/iDvel/rime-ice
   dependencies:
-    - melt_eng  # 英文输入，作为次翻译器挂载到拼音方案
-    - liangfen  # 两分拼字，作为反查挂载到拼音方案
+    - melt_eng        # 英文输入，作为次翻译器挂载到拼音方案
+    - radical_pinyin  # 部件拆字，反查及辅码
 
 
 # 开关
-# 鼠须管 0.16 后，用快捷键切换时的提示文字由 states 定义
 # states: 方案选单显示的名称。可以注释掉，仍可以通过快捷键切换。
-# reset: 默认状态。 注释掉后，切换窗口时不会重置到默认状态。
+# reset: 默认状态。注释掉后，切换窗口时不会重置到默认状态。
 switches:
   - name: ascii_mode
     states: [ 中, Ａ ]
-    reset: 0
-  - name: ascii_punct # 中英标点
+  - name: ascii_punct  # 中英标点
     states: [ ¥, $ ]
-    reset: 0
   - name: traditionalization
     states: [ 简, 繁 ]
-    reset: 0
   - name: emoji
     states: [ 💀, 😄 ]
     reset: 1
   - name: full_shape
     states: [ 半角, 全角 ]
-    reset: 0
+  - name: single_char  # search.lua 的功能开关，辅码查词时是否单字优先
+    abbrev: [词, 单]
+    states: [正常, 单字]
 
 
 # 输入引擎
 engine:
   processors:
-    - lua_processor@select_character      # 以词定字
+    - lua_processor@select_character          # 以词定字
+    - lua_processor@auto_commit_single_punct  # 让写在 alphabet 中的某标点自动上屏
     - ascii_composer
     - recognizer
     - key_binder
@@ -55,26 +54,30 @@ engine:
     - ascii_segmentor
     - matcher
     - abc_segmentor
+    - affix_segmentor@radical_lookup  # 部件拆字自定义 tag
     - punct_segmentor
     - fallback_segmentor
   translators:
     - punct_translator
     - script_translator
-    - lua_translator@date_translator      # 时间、日期、星期
-    - lua_translator@lunar                # 农历
-    - table_translator@custom_phrase      # 自定义短语 custom_phrase.txt
-    - table_translator@melt_eng           # 英文输入
-    - reverse_lookup_translator@liangfen  # 反查，两分拼字
-    - lua_translator@unicode              # Unicode
-    - lua_translator@number_translator    # 数字、金额大写
+    - lua_translator@date_translator    # 时间、日期、星期
+    - lua_translator@lunar              # 农历
+    - table_translator@custom_phrase    # 自定义短语 custom_phrase.txt
+    - table_translator@melt_eng         # 英文输入
+    - table_translator@radical_lookup   # 部件拆字反查
+    - lua_translator@unicode            # Unicode
+    - lua_translator@number_translator  # 数字、金额大写
   filters:
-    - lua_filter@corrector                # 错音错字提示
-    - simplifier@emoji                    # Emoji
-    - simplifier@traditionalize           # 简繁切换
-    - lua_filter@v_filter                 # v 模式 symbols 优先（否则是英文优先）
-    - lua_filter@autocap_filter           # 英文自动大写
-    - lua_filter@reduce_english_filter    # 降低部分英语单词在候选项的位置
-    - uniquifier                          # 去重
+    - lua_filter@corrector                          # 错音错字提示
+    - simplifier@emoji                              # Emoji
+    - simplifier@traditionalize                     # 简繁切换
+    - reverse_lookup_filter@radical_reverse_lookup  # 部件拆字滤镜
+    - lua_filter@search@radical_pinyin              # 部件拆字辅码
+    - lua_filter@v_filter                           # v 模式 symbols 优先（否则是英文优先）
+    - lua_filter@autocap_filter                     # 英文自动大写
+    - lua_filter@reduce_english_filter              # 降低部分英语单词在候选项的位置
+    - lua_filter@pin_cand_filter                    # 置顶候选项
+    - uniquifier                                    # 去重
 
 
 # Lua 配置: 日期、时间、星期、ISO 8601、时间戳的触发关键字
@@ -87,7 +90,13 @@ date_translator:
 
 
 # Lua 配置：农历的触发关键字
-lunar: nl  # 癸卯年（兔）冬月廿一  二〇二四年冬月廿一
+lunar: nl  # 农历： 二〇二三年冬月二十 癸卯年（兔）冬月二十
+
+
+# Lua 配置：直接上屏单个字符
+# lua_filter@search@radical_pinyin 辅码的引导符在 key_binder/search 定义，目前为 `（反引号）。
+# ` 只在中间时起辅码查询作用，但是输入单个 ` 时仍然需要按空格选择，这个 Lua 让单个的 ` 直接上屏。
+auto_commit_single_punct: "`"
 
 
 # Lua 配置：为 corrector 格式化 comment，占位符为 {comment}
@@ -101,12 +110,12 @@ corrector: "{comment}"
 # 正常情况： 输入 rug 得到 「1.rug 2.如果 …… 」
 # 降低之后： 输入 rug 得到 「1.如果 2.rug …… 」
 # 几种模式：
-# all     降低所有 3~4 位长度、前 2~3 位是完整拼音、最后一位是声母的单词
+# all     降低脚本内置的单词（所有 3~4 位长度、前 2~3 位是完整拼音、最后一位是声母），words 作为自定义的额外补充
+# custom  完全自定义，只降低 words 里的
 # none    不降低任何单词，相当于没有启用这个 Lua
-# custom  自定义，只降低 words 里的
 # （匹配的是编码，不是单词）
 reduce_english_filter:
-  mode: custom  # all | none | custom
+  mode: custom  # all | custom | none
   idx: 2        # 降低到第 idx 个位置
   # 自定义的单词列表，示例列表没有降低部分常用单词，如 and cat mail Mac but bad shit ……
   words: [aid, ann,
@@ -127,6 +136,131 @@ reduce_english_filter:
   tad, tail, taj, tar, tax, tec, ted, tel, ter, tex, tic, tied, tier, ties, tim, tin, tit, tour, tout, tum,
   wag, wand, womens, wap, wax, weir, won,
   yan, yen]
+
+
+# Lua 配置: 置顶候选项
+# 符合左边的 cand.preedit 时，按顺序置顶右边的候选项。只是提升已有候选项的顺序，没有自创编码的功能。
+# （对简繁转换无效，除非简繁文字一致 😰）
+#
+# preedit 是经过 translator/preedit_format 处理后的编码，如果是词语则包含空格。
+# ⚠️ 注意方案的 preedit_format 设定，如果 v 显示为 ü，那么左边也要写 ü
+# ⚠️ 双拼 ⚠️ 显示为全拼拼写就要写全拼，如 'shuang pin'，显示为双拼拼写就要写双拼，如 'ul pb' 😰
+#
+# 脚本自动额外生成 preedit 中最后一个空格后面的首字母和 zh ch sh，
+# 如 'ni hao' 会自动生成 'ni hao'、'ni h'
+# 如 'bu hao chi' 会自动生成 'bu hao chi'、'bu hao c'、'bu hao ch'
+# 如果同时写了 da zhuan 和 da zhong，输入 da z 时，排在前面的的优先，除非明确指定 'da z'。
+pin_cand_filter:
+  # 格式：编码<Tab>字词1<Space>字词2……
+  # 示例：
+  # - 'le	了'         # 输入 le 时，置顶「了」
+  # - 'la	啦'         # 输入 la 时，置顶「啦」
+  # - 'ta	他 她 它'    # 可以置顶多个字，按顺序排列
+  # - 'ta	啊'         # ❌ 编码不会产生的字词，不会生效且影响查找效率。自创编码的字词句可以写到 custom_phrase 中。
+  # - 'l	了 啦'      # 支持单编码或输入到一半的编码，输入 l 时，置顶「了、啦」
+  # - 's m	什么'       # 支持简拼，要和输入框的行为一致，有空格加空格
+  # - 'w s m	为什么' # 支持简拼，要和输入框的行为一致，有空格加空格
+  # - 'ni hao	你好 👋 拟好'  # 如果 emoji 被分割开了，可以任意调整 emoji 的位置
+  # # 以下两行，会额外生成 'da z' 'da zh' 的置顶，前两个候选项是「大专、大众」，先写的排在前面
+  # - da zhuang	大专
+  # - da zhong	大众
+  # # 如果明确定义了简码形式，则完全使用简码形式
+  # - da z	打字
+  # - da zh	打仗
+  #
+  # ⚙️ 以下是个人习惯，仅供参考，可以打个补丁来覆盖。
+  # 单编码
+  - q	去 千
+  - w	我 万 往
+  - e	呃
+  - r	让 人
+  - t	他 她 它 祂
+  - y	与 于
+  # - u 在 custom_phrase 置顶
+  # - i 在 custom_phrase 置顶
+  - o	哦
+  - p	片 篇
+  - a	啊
+  - s	是 时 使 式
+  - d	的 地 得
+  - f	发 放 分
+  - g	个 各
+  - h	和 或
+  - j	及 将 即 既 继
+  - k	可
+  - l	了 啦 喽 嘞
+  - z	在 再 自
+  - x	想 像 向
+  - c	才 从
+  # - v
+  - b	吧 把 呗 百
+  - n	那 哪 拿 呐
+  - m	吗 嘛 呣
+  # 单字
+  - de	的 地 得
+  - na	那 哪 拿
+  - ta	他 她 它 祂
+  - er	而 儿 二
+  - ma	吗 嘛 妈
+  - zhe	这 着
+  - hai	还
+  - you	有 🈶 又 由
+  - mei	没
+  - bing	并
+  - tong	同
+  - yu	与 于
+  - he	和
+  - ji	及 即 既
+  - shi	是 时
+  - la	啦 拉
+  - xing	行
+  - dian	点
+  - yao	要
+  - kan	看
+  - bei	被
+  - zuo	做
+  - dao	到 倒
+  - xiang	想 像 向
+  - zhi	只
+  - cai	才
+  - gang	刚
+  - jiu	就
+  # ta、na
+  - ta de	他的 她的 它的
+  - 'tad	他的 她的 它的'  # 英文单词 tad 造成 preedit 为 tad，从而让 ta d 的置顶未生效，需要明确再写上 tad
+  - ta men	他们 她们 它们
+  - ta men de	他们的 她们的 它们的
+  - na er	那儿 哪儿
+  - na ge	那个 哪个
+  - na xie	那些 哪些
+  - na li	那里 哪里
+  - na bian	那边 哪边
+  - na bian er	那边儿 哪边儿
+  - na wei	那位 哪位
+  # 简码
+  - zh	这
+  - d d	等等
+  - 'dd	等等'  # 覆盖英文单词 D&D
+  - d d d d	等等等等
+  - g g	刚刚
+  - c g g	才刚刚
+  - z d	知道
+  - b z d	不知道
+  - w w	往往
+  - h h	哈哈
+  - k k	看看
+  - c c	常常
+  - x x	想想 🤔 想象
+  - y w	因为
+  - s m	什么
+  - w s m	为什么
+  - s b s	是不是
+  - m s m	没什么
+  - s m d	什么的
+  - s m s	什么是
+  - 'sms	什么是'  # 覆盖英文单词 SMS
+  - s m a	什么啊
+  - 'sma	什么啊'  # 覆盖英文单词 S码
 
 
 # 主翻译器，拼音
@@ -153,14 +287,6 @@ melt_eng:
     - xform/.*//           # 清空提示码
 
 
-# 反查：两分（拼字）
-liangfen:
-  dictionary: liangfen     # 挂载两分词典 liangfen.dict.yaml
-  prefix: "u"              # 以 u 开头来反查
-  enable_completion: true  # 补全提示
-  # tips: 〔两分〕         # 反查时显示的文字，建议注释掉，否则很多 u 开头的英文单词也会显示这个
-
-
 # 自定义短语：custom_phrase.txt
 custom_phrase:
   dictionary: ""
@@ -173,16 +299,17 @@ custom_phrase:
 
 # Emoji
 emoji:
-  opencc_config: emoji.json
   option_name: emoji
+  opencc_config: emoji.json
+  inherit_comment: false  # 在 corrector.lua 及反查中，emoji 返回空注释
 
 
 # 简繁切换
 traditionalize:
   option_name: traditionalization
-  opencc_config: s2t.json             # s2t.json | s2hk.json | s2tw.json | s2twp.json
-  tips: none                          # 转换提示: all 都显示 | char 仅单字显示 | none 不显示。
-  excluded_types: [ reverse_lookup ]  # 不转换反查（两分拼字）的内容
+  opencc_config: s2t.json  # s2t.json | s2hk.json | s2tw.json | s2twp.json
+  tips: none               # 转换提示: all 都显示 | char 仅单字显示 | none 不显示。
+  tags: [ abc, number, gregorian_to_lunar ]  # 限制在对应 tag，不对其他如反查的内容做简繁转换
 
 
 # 标点符号
@@ -199,35 +326,54 @@ punctuator:
     __include: symbols_v:/symbols              # 从 symbols_v.yaml 导入配置
 
 
+# 部件拆字反查
+radical_lookup:
+  tag: radical_lookup
+  dictionary: radical_pinyin
+  enable_user_dict: false
+  prefix: "uU"  # 反查前缀（反查时前缀会消失影响打英文所以设定为两个字母，或可改成一个非字母符号），与 recognizer/patterns/radical_lookup 匹配
+  tips: "  〔拆字〕"
+  comment_format:
+    - erase/^.*$//
+# 部件拆字滤镜
+radical_reverse_lookup:
+  tags: [ radical_lookup ]
+  dictionary: rime_ice  # 拼音标注来源，可将 other/single_pinyin.reverse.bin 拷贝至 build/ 目录，此处改为 single_pinyin 来为所有字显示拼音
+  # comment_format:     # 自定义 comment，例如在左右加上括号
+  #  - xform/^/(/
+  #  - xform/$/)/
+
+
 # 处理符合特定规则的输入码，如网址、反查
 recognizer:
   import_preset: default  # 从 default.yaml 继承通用的
   patterns:  # 再增加方案专有的：
     punct: "^v([0-9]|10|[A-Za-z]+)$"    # 响应 symbols_v.yaml 的 symbols，用 'v' 替换 '/'
-    reverse_lookup: "^u[a-z]+$"         # 响应两分拼字的反查
-    unicode: "^U[a-f0-9]+"              # 响应 lua_translator@unicode 脚本将自动获取第 2 个字符作为触发前缀
-    number: "^R[0-9]+[.]?[0-9]*"        # 响应 lua_translator@number_translator 脚本将自动获取第 2 个字符作为触发前缀
-    gregorian_to_lunar: "^N[0-9]{1,8}"  # 响应 lua_translator@lunar 公历转农历，输入 N20240115 得到「二〇二四年腊月初五」，脚本将自动获取第 2 个字符作为触发前缀
+    radical_lookup: "^uU[a-z]+$"        # 响应部件拆字的反查，与 radical_lookup/prefix 匹配
+    unicode: "^U[a-f0-9]+"              # 脚本将自动获取第 2 个字符 U 作为触发前缀，响应 lua_translator@unicode，输出 Unicode 字符
+    number: "^R[0-9]+[.]?[0-9]*"        # 脚本将自动获取第 2 个字符 R 作为触发前缀，响应 lua_translator@number_translator，数字金额大写
+    gregorian_to_lunar: "^N[0-9]{1,8}"  # 脚本将自动获取第 2 个字符 N 作为触发前缀，响应 lua_translator@lunar，公历转农历，输入 N20240115 得到「二〇二三年腊月初五」
 
 
 # 从 default 继承快捷键
 key_binder:
-  import_preset: default # 从 default.yaml 继承通用的
-  # bindings:            # 也可以再增加方案专有的
+  import_preset: default  # 从 default.yaml 继承通用的
+  search: "`"             # 辅码引导符，要添加到 speller/alphabet
+  # bindings:             # 也可以再增加方案专有的快捷键
 
 
 # 拼写设定
 speller:
   # 如果不想让什么标点直接上屏，可以加在 alphabet，或者编辑标点符号为两个及以上的映射
-  alphabet: zyxwvutsrqponmlkjihgfedcbaZYXWVUTSRQPONMLKJIHGFEDCBA
+  alphabet: zyxwvutsrqponmlkjihgfedcbaZYXWVUTSRQPONMLKJIHGFEDCBA`
   delimiter: " '"  # 第一位<空格>是拼音之间的分隔符；第二位<'>表示可以手动输入单引号来分割拼音。
   algebra:
     ### 模糊音
     # 声母
-    # - derive/^([zcs])h/$1/
-    # - derive/^([zcs])([^h])/$1h$2/
-    # - derive/^l/n/  # 解释：为 l 开头的拼写派生出 n 开头，即 nai 也可以输出「来、莱、赖……」
-    # - derive/^n/l/  # lai 可输出「奶」，可以单向或成对儿启用模糊音
+    # - derive/^([zcs])h/$1/          # zh* ch* sh* 派生出 z* c* s*
+    # - derive/^([zcs])([^h])/$1h$2/  # z* c* s*    派生出 zh* ch* sh*
+    # - derive/^l/n/  # 解释：为 l 开头的拼写派生出 n 开头，即 nai 也可以输出 lai（来、莱、赖……）
+    # - derive/^n/l/  #      lai 可输出 nai（奶、乃、奈……）。 可以单向或成对儿启用模糊音
     # - derive/^f/h/
     # - derive/^h/f/
     # - derive/^l/r/
@@ -275,7 +421,9 @@ speller:
     - abbrev/^([a-z]).+$/$1/   # 超级简拼
     - abbrev/^([zcs]h).+$/$1/  # 超级简拼中，zh ch sh 视为整体（ch'sh → 城市），而不是像这样分开（c'h's'h → 吃好睡好）。
 
-    ### v u 转换，增加对词库中「nue/nve」「qu/qv」等不同注音的支持
+    ### v u 转换
+    # 雾凇的词库严格按照正确的 u v(ü) 注音的，如 qu 和 nve，支持使用 qv 和 nue 来输入
+    # 再增加对其他词库的 qv nue 这种注音的支持
     - derive/^([nl])ue$/$1ve/
     - derive/^([nl])ve$/$1ue/
     - derive/^([jqxy])u/$1v/
